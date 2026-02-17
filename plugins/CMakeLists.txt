@@ -15,7 +15,6 @@ function(add_mosquitto_plugin_no_install PLUGIN_NAME SRCLIST INCLIST LINKLIST)
 	target_link_libraries(${PLUGIN_NAME} PRIVATE
 		${LINKLIST}
 		common-options
-		mosquitto
 	)
 endfunction()
 
