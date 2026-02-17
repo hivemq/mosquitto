@@ -2,10 +2,13 @@
 	"name": "mosquitto",
 	"version-string": "2.1.2",
 	"dependencies": [
+		"abseil",
 		"argon2",
 		"cjson",
+		"grpc",
 		"libmicrohttpd",
 		"openssl",
+		"protobuf",
 		"pthreads",
 		"sqlite3"
 	]

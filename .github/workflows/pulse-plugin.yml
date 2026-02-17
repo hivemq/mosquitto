@@ -230,13 +230,7 @@ jobs:
           vcpkgGitCommitId: '962e5e39f8a25f42522f51fffc574e05a3efd26b'
 
       - name: Install dependencies via vcpkg
-        run: |
-          vcpkg install --triplet x64-windows `
-            cjson `
-            openssl `
-            protobuf `
-            grpc `
-            abseil
+        run: vcpkg install --triplet x64-windows
 
       - name: Configure CMake
         run: |
