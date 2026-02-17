@@ -190,6 +190,18 @@ static int parse_connection_string(struct pulse_plugin_data *data, const char *j
 		goto cleanup;
 	}
 
+	/* Extract "type" -> must be "MOSQUITTO" for this agent */
+	item = cJSON_GetObjectItem(json, "type");
+	str_val = cJSON_GetStringValue(item);
+	if (!str_val) {
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: JWT missing 'type' field.");
+		goto cleanup;
+	}
+	if (strcasecmp(str_val, "MOSQUITTO") != 0) {
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: JWT type must be 'MOSQUITTO', got '%s'.", str_val);
+		goto cleanup;
+	}
+
 	/* Extract "uri" -> grpc_server (strip tcp:// or grpc:// prefix) */
 	item = cJSON_GetObjectItem(json, "uri");
 	str_val = cJSON_GetStringValue(item);

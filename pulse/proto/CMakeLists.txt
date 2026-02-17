@@ -89,6 +89,9 @@ add_library(pulse_proto STATIC
 	${PULSE_GRPC_HDRS}
 )
 
+# Enable PIC so this static lib can be linked into a shared library (plugin)
+set_property(TARGET pulse_proto PROPERTY POSITION_INDEPENDENT_CODE ON)
+
 target_include_directories(pulse_proto
 	PUBLIC
 		${PULSE_PROTO_OUT_DIR}
