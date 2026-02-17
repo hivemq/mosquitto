@@ -383,3 +383,82 @@ int pulse_discovery_dump_to_json(const char *filepath)
 	mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Discovered topics dumped to %s", filepath);
 	return 0;
 }
+
+int pulse_discovery_get_topic_with_suggestion(const char *topic,
+                                              const char **out_data_type_id,
+                                              const char **out_format_id)
+{
+	if (!topic || !out_data_type_id || !out_format_id) return -1;
+
+	*out_data_type_id = NULL;
+	*out_format_id = NULL;
+
+	pthread_mutex_lock(&g_discovery_mutex);
+
+	discovery_entry_t *entry = NULL;
+	HASH_FIND_STR(g_discovered_topics, topic, entry);
+
+	if (!entry) {
+		pthread_mutex_unlock(&g_discovery_mutex);
+		return -1;
+	}
+
+	/* Detect data types from the stored payload sample (no deserialized data) */
+	if (entry->payload_sample && entry->payload_sample_len > 0) {
+		pulse_dts_list_t suggestions = pulse_detect_data_type(
+			(const uint8_t *)entry->payload_sample,
+			entry->payload_sample_len,
+			false); /* Don't include deserialized data for efficiency */
+
+		/* Return the first (most likely) suggestion */
+		if (suggestions.count > 0) {
+			*out_data_type_id = suggestions.items[0].data_type_id;
+			*out_format_id = suggestions.items[0].format_id;
+		}
+
+		/* Note: No need to free since we didn't request deserialized data */
+	}
+
+	pthread_mutex_unlock(&g_discovery_mutex);
+	return 0;
+}
+
+int pulse_discovery_get_datapoint_with_suggestions(const char *topic,
+                                                   uint64_t *out_count,
+                                                   time_t *out_first_seen,
+                                                   time_t *out_last_seen,
+                                                   pulse_dts_list_t *out_suggestions)
+{
+	if (!topic) return -1;
+
+	pthread_mutex_lock(&g_discovery_mutex);
+
+	discovery_entry_t *entry = NULL;
+	HASH_FIND_STR(g_discovered_topics, topic, entry);
+
+	if (!entry) {
+		pthread_mutex_unlock(&g_discovery_mutex);
+		return -1;
+	}
+
+	/* Copy basic statistics */
+	if (out_count) *out_count = entry->message_count;
+	if (out_first_seen) *out_first_seen = entry->first_seen;
+	if (out_last_seen) *out_last_seen = entry->last_seen;
+
+	/* Detect data types with deserialized data */
+	if (out_suggestions) {
+		if (entry->payload_sample && entry->payload_sample_len > 0) {
+			*out_suggestions = pulse_detect_data_type(
+				(const uint8_t *)entry->payload_sample,
+				entry->payload_sample_len,
+				true); /* Include deserialized data */
+		} else {
+			/* No payload sample available */
+			memset(out_suggestions, 0, sizeof(pulse_dts_list_t));
+		}
+	}
+
+	pthread_mutex_unlock(&g_discovery_mutex);
+	return 0;
+}

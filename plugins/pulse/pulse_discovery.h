@@ -20,6 +20,8 @@ SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 #include <stdbool.h>
 #include <time.h>
 
+#include "pulse_data_type_detector.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -135,6 +137,36 @@ void pulse_discovery_free_page(char **topics, size_t count);
  * @return 0 on success, non-zero on failure
  */
 int pulse_discovery_dump_to_json(const char *filepath);
+
+/**
+ * Get topic details with first data type suggestion only.
+ * Used for GetUngovernedTopics gRPC handler (efficient, no deserialized data).
+ *
+ * @param topic The topic to look up
+ * @param out_data_type_id Pointer to store first data type ID (constant string, don't free)
+ * @param out_format_id Pointer to store first format ID (constant string, don't free)
+ * @return 0 on success, -1 if not found
+ */
+int pulse_discovery_get_topic_with_suggestion(const char *topic,
+                                              const char **out_data_type_id,
+                                              const char **out_format_id);
+
+/**
+ * Get topic details with all data type suggestions.
+ * Used for GetUngovernedDataPoint gRPC handler (includes deserialized data).
+ *
+ * @param topic The topic to look up
+ * @param out_count Pointer to store message count
+ * @param out_first_seen Pointer to store first seen timestamp
+ * @param out_last_seen Pointer to store last seen timestamp
+ * @param out_suggestions Pointer to store suggestion list (caller must free with pulse_free_dts_list)
+ * @return 0 on success, -1 if not found
+ */
+int pulse_discovery_get_datapoint_with_suggestions(const char *topic,
+                                                   uint64_t *out_count,
+                                                   time_t *out_first_seen,
+                                                   time_t *out_last_seen,
+                                                   pulse_dts_list_t *out_suggestions);
 
 #ifdef __cplusplus
 }

@@ -14,6 +14,8 @@ set(SRCLIST
 	pulse_client.h
 	pulse_discovery.c
 	pulse_discovery.h
+	pulse_data_type_detector.c
+	pulse_data_type_detector.h
 	pulse_information_model.h
 )
 

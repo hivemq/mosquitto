@@ -632,11 +632,18 @@ static void ungoverned_topics_thread_func(void)
 				auto *resp = response.mutable_response();
 				resp->set_total_count(static_cast<int32_t>(total));
 
-				for (size_t i = 0; i < count; i++) {
-					auto *topic_proto = resp->add_results();
-					topic_proto->set_topic(topics[i]);
-					/* Leave suggested_data_type_id and suggested_serialization_format_id empty for now */
+			for (size_t i = 0; i < count; i++) {
+				auto *topic_proto = resp->add_results();
+				topic_proto->set_topic(topics[i]);
+				
+				/* Get first data type suggestion */
+				const char *data_type_id = nullptr;
+				const char *format_id = nullptr;
+				if (pulse_discovery_get_topic_with_suggestion(topics[i], &data_type_id, &format_id) == 0) {
+					if (data_type_id) topic_proto->set_suggested_data_type_id(data_type_id);
+					if (format_id) topic_proto->set_suggested_serialization_format_id(format_id);
 				}
+			}
 
 				pulse_discovery_free_page(topics, count);
 
@@ -716,14 +723,15 @@ static void datapoint_thread_func(void)
 			uint64_t count = 0;
 			time_t first_seen = 0;
 			time_t last_seen = 0;
-			char *payload = nullptr;
-			size_t payload_len = 0;
 
 			hivemq::pulse::grpc::GetUngovernedDataPointResponseOrErrorProto response;
 			response.set_request_id(request_id);
 
-			if (pulse_discovery_get_details(topic.c_str(), &count, &first_seen, &last_seen,
-			                                &payload, &payload_len) == 0) {
+			/* Get all data type suggestions */
+			pulse_dts_list_t suggestions;
+			if (pulse_discovery_get_datapoint_with_suggestions(topic.c_str(),
+			                                                    &count, &first_seen, &last_seen,
+			                                                    &suggestions) == 0) {
 				/* Build success response */
 				auto *resp = response.mutable_response();
 				auto *dp = resp->mutable_ungoverned_data_point();
@@ -740,14 +748,18 @@ static void datapoint_thread_func(void)
 				last_ts->set_seconds(last_seen);
 				last_ts->set_nanos(0);
 
-				/* Add data type suggestion with the payload sample */
-				if (payload && payload_len > 0) {
+				/* Add all data type suggestions */
+				for (int i = 0; i < suggestions.count; i++) {
 					auto *suggestion = dp->add_data_type_suggestions();
-					suggestion->set_data_type("unknown");
-					suggestion->set_format("raw");
-					suggestion->set_data(payload, payload_len);
-					free(payload);
+					suggestion->set_data_type(suggestions.items[i].data_type_id);
+					suggestion->set_format(suggestions.items[i].format_id);
+					if (suggestions.items[i].deserialized_data) {
+						suggestion->set_data(suggestions.items[i].deserialized_data);
+					}
 				}
+				
+				/* Free the suggestion list */
+				pulse_free_dts_list(&suggestions);
 
 				fprintf(stdout, "Pulse: Sending data point response (topic='%s', count=%lu)\n",
 				        topic.c_str(), (unsigned long)count);

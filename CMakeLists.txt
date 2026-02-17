@@ -148,6 +148,7 @@ target_include_directories(common-options
 	INTERFACE
 		${mosquitto_SOURCE_DIR}
 		${mosquitto_SOURCE_DIR}/include
+		${CJSON_INCLUDE_DIRS}
 )
 
 if(WITH_TLS)
