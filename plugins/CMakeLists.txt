@@ -16,6 +16,12 @@ function(add_mosquitto_plugin_no_install PLUGIN_NAME SRCLIST INCLIST LINKLIST)
 		${LINKLIST}
 		common-options
 	)
+
+	# On Windows, plugins need to link against the broker executable
+	# to resolve broker API symbols at link time
+	if(WIN32)
+		target_link_libraries(${PLUGIN_NAME} PRIVATE mosquitto)
+	endif()
 endfunction()
 
 function(add_mosquitto_plugin PLUGIN_NAME SRCLIST INCLIST LINKLIST)
