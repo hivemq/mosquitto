@@ -100,15 +100,21 @@ target_link_libraries(pulse_proto
 		protobuf::libprotobuf
 		gRPC::grpc
 		${GRPCPP_LIBRARY}
-		absl::base
-		absl::log
-		absl::log_internal_check_op
-		absl::log_internal_conditions
-		absl::log_internal_message
-		absl::status
-		absl::strings
-		absl::cord
 )
+
+# Link abseil targets conditionally (availability varies by version)
+foreach(ABSL_TARGET base status strings cord)
+	if(TARGET absl::${ABSL_TARGET})
+		target_link_libraries(pulse_proto PUBLIC absl::${ABSL_TARGET})
+	endif()
+endforeach()
+
+# abseil log targets are newer and may not exist in older versions
+foreach(ABSL_LOG_TARGET log log_internal_check_op log_internal_conditions log_internal_message)
+	if(TARGET absl::${ABSL_LOG_TARGET})
+		target_link_libraries(pulse_proto PUBLIC absl::${ABSL_LOG_TARGET})
+	endif()
+endforeach()
 
 # Suppress warnings in generated code
 if(NOT WIN32)
