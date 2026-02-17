@@ -21,8 +21,8 @@ extern "C" {
 #endif
 
 /* Version constants for the Pulse agent */
-#define PULSE_AGENT_VERSION "1.0.0"
-#define PULSE_APPLICATION_VERSION "1.0.0"
+#define PULSE_AGENT_VERSION "0.1.0"
+#define PULSE_APPLICATION_VERSION "0.1.0"
 
 /**
  * Initialize the Pulse gRPC client and perform the initial handshake.
