@@ -102,6 +102,14 @@ if(WITH_DLT)
 	pkg_check_modules(DLT "automotive-dlt >= 2.11" REQUIRED)
 endif()
 
+option(WITH_GRPC "Include gRPC support?" OFF)
+message(STATUS "WITH_GRPC = ${WITH_GRPC}")
+if(WITH_GRPC)
+	find_package(gRPC REQUIRED)
+	add_definitions("-DWITH_GRPC")
+	add_subdirectory(pulse/proto)
+endif()
+
 find_package(cJSON REQUIRED)
 find_package(argon2)
 
@@ -140,6 +148,7 @@ target_include_directories(common-options
 	INTERFACE
 		${mosquitto_SOURCE_DIR}
 		${mosquitto_SOURCE_DIR}/include
+		${CJSON_INCLUDE_DIRS}
 )
 
 if(WITH_TLS)
