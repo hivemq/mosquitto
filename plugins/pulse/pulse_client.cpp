@@ -50,6 +50,9 @@ SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 #include "google/protobuf/timestamp.pb.h"
 #include "uuid.pb.h"
 
+#include "mosquitto.h"
+#include "mosquitto/broker.h"
+
 #include "pulse_client.h"
 #include "pulse_information_model.h"
 #include "pulse_discovery.h"
@@ -268,19 +271,19 @@ static int fetch_information_model(void)
 	grpc::Status status = g_infomodel_stub->GetInformationModel(&context, request, &response);
 
 	if (!status.ok()) {
-	fprintf(stderr, "Pulse: GetInformationModel failed: %s (code: %d)\n",
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: GetInformationModel failed: %s (code: %d)",
 		        status.error_message().c_str(), static_cast<int>(status.error_code()));
 		return -1;
 	}
 
 	if (response.has_error()) {
-	fprintf(stderr, "Pulse: GetInformationModel error from server: %s\n",
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: GetInformationModel error from server: %s",
 		        response.error().message().c_str());
 		return -1;
 	}
 
 	if (!response.has_response()) {
-	fprintf(stderr, "Pulse: GetInformationModel returned empty response\n");
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: GetInformationModel returned empty response");
 		return -1;
 	}
 
@@ -329,10 +332,10 @@ static int fetch_information_model(void)
 	case hivemq::pulse::grpc::InformationModelProto::kCompleteGraphDelta:
 	case hivemq::pulse::grpc::InformationModelProto::kSubGraphDelta:
 		/* Deltas are not supported for initial fetch */
-	fprintf(stderr, "Pulse: Warning: Received delta graph for initial information model fetch\n");
+		mosquitto_log_printf(MOSQ_LOG_WARNING, "Pulse: Received delta graph for initial information model fetch");
 		break;
 	default:
-	fprintf(stderr, "Pulse: Warning: Unknown graph type in information model\n");
+		mosquitto_log_printf(MOSQ_LOG_WARNING, "Pulse: Unknown graph type in information model");
 		break;
 	}
 
@@ -429,7 +432,7 @@ static int fetch_information_model(void)
 
 	g_information_model_loaded = true;
 
-	fprintf(stdout, "Pulse: Information model loaded: %s (version %lu, %zu nodes, %zu relations, %zu tags)\n",
+	mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Information model loaded: %s (version %lu, %zu nodes, %zu relations, %zu tags)",
 	        g_information_model->name ? g_information_model->name : "(unnamed)",
 	        (unsigned long)g_information_model->version,
 	        g_information_model->node_count,
@@ -437,15 +440,6 @@ static int fetch_information_model(void)
 	        g_information_model->tag_count);
 
 	return 0;
-}
-
-/* Called after fetch to dump the model (must be called without holding the lock) */
-static void dump_information_model_debug(void)
-{
-	const char *debug_path = "/tmp/pulse_information_model.json";
-	if (pulse_dump_information_model_to_json(debug_path) == 0) {
-		fprintf(stdout, "Pulse: Debug: Information model dumped to %s\n", debug_path);
-	}
 }
 
 /* Send a single heartbeat */
@@ -479,13 +473,13 @@ static int send_heartbeat(void)
 	grpc::Status status = g_heartbeat_stub->Heartbeat(&context, request, &response);
 
 	if (!status.ok()) {
-	fprintf(stderr, "Pulse: Heartbeat failed: %s (code: %d)\n",
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Heartbeat failed: %s (code: %d)",
 		        status.error_message().c_str(), static_cast<int>(status.error_code()));
 		return -1;
 	}
 
 	if (response.has_error()) {
-	fprintf(stderr, "Pulse: Heartbeat error from server: %s\n",
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Heartbeat error from server: %s",
 		        response.error().message().c_str());
 		return -1;
 	}
@@ -509,7 +503,7 @@ static void heartbeat_thread_func(void)
 		/* Send heartbeat */
 		if (g_running) {
 			if (send_heartbeat() == 0) {
-				fprintf(stdout, "Pulse: Heartbeat sent successfully\n");
+				mosquitto_log_printf(MOSQ_LOG_DEBUG, "Pulse: Heartbeat sent successfully");
 			}
 		}
 	}
@@ -533,7 +527,7 @@ static void notification_thread_func(void)
 		auto reader = g_infomodel_stub->OpenUnidirectionalInformationModelUpdatedNotificationStream(
 			g_notification_context.get(), empty_request);
 
-		fprintf(stdout, "Pulse: Information model update notification stream opened\n");
+		mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Information model update notification stream opened");
 
 		/* Read notifications from the stream */
 		hivemq::pulse::grpc::InformationModelUpdatedNotificationProto notification;
@@ -549,16 +543,15 @@ static void notification_thread_func(void)
 			}
 
 			if (new_version != current_version) {
-				fprintf(stdout, "Pulse: Information model update notification received. "
-				        "New version: %lu (current: %lu)\n",
+				mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Information model update notification received. "
+				        "New version: %lu (current: %lu)",
 				        (unsigned long)new_version, (unsigned long)current_version);
 
 				/* Re-fetch the information model */
 				if (fetch_information_model() == 0) {
-					fprintf(stdout, "Pulse: Information model updated successfully\n");
-					dump_information_model_debug();
+					mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Information model updated successfully");
 				} else {
-					fprintf(stderr, "Pulse: Warning: Failed to fetch updated information model\n");
+					mosquitto_log_printf(MOSQ_LOG_WARNING, "Pulse: Failed to fetch updated information model");
 				}
 			}
 		}
@@ -571,15 +564,15 @@ static void notification_thread_func(void)
 		}
 
 		if (!status.ok()) {
-			fprintf(stderr, "Pulse: Information model notification stream ended: %s (code: %d)\n",
+			mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Information model notification stream ended: %s (code: %d)",
 			        status.error_message().c_str(), static_cast<int>(status.error_code()));
 		} else {
-			fprintf(stdout, "Pulse: Information model notification stream closed by server\n");
+			mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Information model notification stream closed by server");
 		}
 
 		/* Wait before reconnecting */
 		if (g_running) {
-			fprintf(stdout, "Pulse: Reconnecting notification stream in 5 seconds...\n");
+			mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Reconnecting notification stream in 5 seconds...");
 			std::unique_lock<std::mutex> lock(g_mutex);
 			if (g_cv.wait_for(lock, std::chrono::seconds(5), []{ return !g_running.load(); })) {
 				break;
@@ -605,7 +598,7 @@ static void ungoverned_topics_thread_func(void)
 		auto stream = g_ungoverned_stub->OpenBidirectionalGetUngovernedTopicsStream(
 			g_ungoverned_context.get());
 
-		fprintf(stdout, "Pulse: Ungoverned topics stream opened\n");
+		mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Ungoverned topics stream opened");
 
 		/* Read requests from the server and respond */
 		hivemq::pulse::grpc::GetUngovernedTopicsRequestProto request;
@@ -614,7 +607,7 @@ static void ungoverned_topics_thread_func(void)
 			int64_t limit = request.limit();
 			int64_t offset = request.offset();
 
-			fprintf(stdout, "Pulse: Received ungoverned topics request (id=%ld, limit=%ld, offset=%ld)\n",
+			mosquitto_log_printf(MOSQ_LOG_DEBUG, "Pulse: Received ungoverned topics request (id=%ld, limit=%ld, offset=%ld)",
 			        (long)request_id, (long)limit, (long)offset);
 
 			/* Get the requested page of discovered topics */
@@ -647,20 +640,20 @@ static void ungoverned_topics_thread_func(void)
 
 				pulse_discovery_free_page(topics, count);
 
-				fprintf(stdout, "Pulse: Sending ungoverned topics response (count=%zu, total=%zu)\n",
+				mosquitto_log_printf(MOSQ_LOG_DEBUG, "Pulse: Sending ungoverned topics response (count=%zu, total=%zu)",
 				        count, total);
 			} else {
 				/* Build error response */
 				auto *err = response.mutable_error();
 				err->set_message("Failed to retrieve discovered topics");
 
-				fprintf(stderr, "Pulse: Failed to get discovered topics for request %ld\n",
+				mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Failed to get discovered topics for request %ld",
 				        (long)request_id);
 			}
 
 			/* Send the response */
 			if (!stream->Write(response)) {
-				fprintf(stderr, "Pulse: Failed to write ungoverned topics response\n");
+				mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Failed to write ungoverned topics response");
 				break;
 			}
 		}
@@ -674,15 +667,15 @@ static void ungoverned_topics_thread_func(void)
 		}
 
 		if (!status.ok()) {
-			fprintf(stderr, "Pulse: Ungoverned topics stream ended: %s (code: %d)\n",
+			mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Ungoverned topics stream ended: %s (code: %d)",
 			        status.error_message().c_str(), static_cast<int>(status.error_code()));
 		} else {
-			fprintf(stdout, "Pulse: Ungoverned topics stream closed by server\n");
+			mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Ungoverned topics stream closed by server");
 		}
 
 		/* Wait before reconnecting */
 		if (g_running) {
-			fprintf(stdout, "Pulse: Reconnecting ungoverned topics stream in 5 seconds...\n");
+			mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Reconnecting ungoverned topics stream in 5 seconds...");
 			std::unique_lock<std::mutex> lock(g_mutex);
 			if (g_cv.wait_for(lock, std::chrono::seconds(5), []{ return !g_running.load(); })) {
 				break;
@@ -708,7 +701,7 @@ static void datapoint_thread_func(void)
 		auto stream = g_datapoint_stub->OpenBidirectionalGetUngovernedDataPointStream(
 			g_datapoint_context.get());
 
-		fprintf(stdout, "Pulse: Ungoverned data point stream opened\n");
+		mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Ungoverned data point stream opened");
 
 		/* Read requests from the server and respond */
 		hivemq::pulse::grpc::GetUngovernedDataPointRequestProto request;
@@ -716,7 +709,7 @@ static void datapoint_thread_func(void)
 			int64_t request_id = request.request_id();
 			std::string topic = request.topic();
 
-			fprintf(stdout, "Pulse: Received data point request (id=%ld, topic='%s')\n",
+			mosquitto_log_printf(MOSQ_LOG_DEBUG, "Pulse: Received data point request (id=%ld, topic='%s')",
 			        (long)request_id, topic.c_str());
 
 			/* Get the data point details */
@@ -761,20 +754,20 @@ static void datapoint_thread_func(void)
 				/* Free the suggestion list */
 				pulse_free_dts_list(&suggestions);
 
-				fprintf(stdout, "Pulse: Sending data point response (topic='%s', count=%lu)\n",
+				mosquitto_log_printf(MOSQ_LOG_DEBUG, "Pulse: Sending data point response (topic='%s', count=%lu)",
 				        topic.c_str(), (unsigned long)count);
 			} else {
 				/* Build error response */
 				auto *err = response.mutable_error();
 				err->set_message("Topic not found in discovered topics");
 
-				fprintf(stderr, "Pulse: Data point not found for topic '%s' (request %ld)\n",
+				mosquitto_log_printf(MOSQ_LOG_DEBUG, "Pulse: Data point not found for topic '%s' (request %ld)",
 				        topic.c_str(), (long)request_id);
 			}
 
 			/* Send the response */
 			if (!stream->Write(response)) {
-				fprintf(stderr, "Pulse: Failed to write data point response\n");
+				mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Failed to write data point response");
 				break;
 			}
 		}
@@ -788,15 +781,15 @@ static void datapoint_thread_func(void)
 		}
 
 		if (!status.ok()) {
-			fprintf(stderr, "Pulse: Data point stream ended: %s (code: %d)\n",
+			mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Data point stream ended: %s (code: %d)",
 			        status.error_message().c_str(), static_cast<int>(status.error_code()));
 		} else {
-			fprintf(stdout, "Pulse: Data point stream closed by server\n");
+			mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Data point stream closed by server");
 		}
 
 		/* Wait before reconnecting */
 		if (g_running) {
-			fprintf(stdout, "Pulse: Reconnecting data point stream in 5 seconds...\n");
+			mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Reconnecting data point stream in 5 seconds...");
 			std::unique_lock<std::mutex> lock(g_mutex);
 			if (g_cv.wait_for(lock, std::chrono::seconds(5), []{ return !g_running.load(); })) {
 				break;
@@ -828,7 +821,7 @@ extern "C" int pulse_handshake(const char *server_address, const char *agent_id,
 	/* Set agent UUID and store for later use */
 	auto *agent_uuid = request.mutable_agent_uuid();
 	if (!parse_uuid(agent_id, agent_uuid)) {
-	fprintf(stderr, "Pulse: Error: Invalid agent-id UUID format: %s\n", agent_id);
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Invalid agent-id UUID format: %s", agent_id);
 		return -1;
 	}
 	g_agent_uuid = *agent_uuid;
@@ -836,7 +829,7 @@ extern "C" int pulse_handshake(const char *server_address, const char *agent_id,
 	/* Set project UUID and store for later use */
 	auto *project_uuid = request.mutable_project_uuid();
 	if (!parse_uuid(project_id, project_uuid)) {
-	fprintf(stderr, "Pulse: Error: Invalid project-id UUID format: %s\n", project_id);
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Invalid project-id UUID format: %s", project_id);
 		return -1;
 	}
 	g_project_uuid = *project_uuid;
@@ -854,24 +847,24 @@ extern "C" int pulse_handshake(const char *server_address, const char *agent_id,
 	grpc::Status status = handshake_stub->Handshake(&context, request, &response);
 
 	if (!status.ok()) {
-	fprintf(stderr, "Pulse: Handshake failed: %s (code: %d)\n",
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Handshake failed: %s (code: %d)",
 		        status.error_message().c_str(), static_cast<int>(status.error_code()));
 		return -1;
 	}
 
 	/* Check response status */
 	if (response.status_code() != hivemq::pulse::grpc::InitialServerToAgentHandshakeResponseProto::SUCCESS) {
-	fprintf(stderr, "Pulse: Handshake rejected by server: %s\n",
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Handshake rejected by server: %s",
 		        response.has_failed_message() ? response.failed_message().c_str() : "unknown reason");
 		return -1;
 	}
 
-	fprintf(stdout, "Pulse: Handshake successful. Server version: %s\n",
+	mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Handshake successful. Server version: %s",
 	        response.server_version().c_str());
 
 	if (!response.latest_agent_version().empty()) {
 		if (response.latest_agent_version() != PULSE_AGENT_VERSION) {
-			fprintf(stdout, "Pulse: Note: A newer agent version is available: %s\n",
+			mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Note: A newer agent version is available: %s",
 			        response.latest_agent_version().c_str());
 		}
 	}
@@ -881,7 +874,7 @@ extern "C" int pulse_handshake(const char *server_address, const char *agent_id,
 		int interval = response.server_information().heartbeat_interval_seconds();
 		if (interval > 0) {
 			g_heartbeat_interval_seconds = interval;
-			fprintf(stdout, "Pulse: Heartbeat interval: %d seconds\n", g_heartbeat_interval_seconds);
+			mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Heartbeat interval: %d seconds", g_heartbeat_interval_seconds);
 		}
 	}
 
@@ -893,11 +886,8 @@ extern "C" int pulse_handshake(const char *server_address, const char *agent_id,
 
 	/* Fetch the initial information model */
 	if (fetch_information_model() != 0) {
-		fprintf(stderr, "Pulse: Warning: Failed to fetch initial information model\n");
+		mosquitto_log_printf(MOSQ_LOG_WARNING, "Pulse: Failed to fetch initial information model");
 		/* Continue anyway - heartbeats will still work */
-	} else {
-		/* Dump for debugging */
-		dump_information_model_debug();
 	}
 
 	/* Start background threads */
@@ -1288,7 +1278,7 @@ extern "C" int pulse_dump_information_model_to_json(const char *filepath)
 
 	std::lock_guard<std::mutex> lock(g_infomodel_mutex);
 	if (!g_information_model) {
-		fprintf(stderr, "Pulse: No information model loaded to dump\n");
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: No information model loaded to dump");
 		return -1;
 	}
 
@@ -1355,13 +1345,13 @@ extern "C" int pulse_dump_information_model_to_json(const char *filepath)
 	cJSON_Delete(root);
 
 	if (!json_str) {
-		fprintf(stderr, "Pulse: Failed to serialize information model to JSON\n");
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Failed to serialize information model to JSON");
 		return -1;
 	}
 
 	FILE *fp = fopen(filepath, "w");
 	if (!fp) {
-		fprintf(stderr, "Pulse: Failed to open file for writing: %s\n", filepath);
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Pulse: Failed to open file for writing: %s", filepath);
 		free(json_str);
 		return -1;
 	}
@@ -1370,6 +1360,6 @@ extern "C" int pulse_dump_information_model_to_json(const char *filepath)
 	fclose(fp);
 	free(json_str);
 
-	fprintf(stdout, "Pulse: Information model dumped to %s\n", filepath);
+	mosquitto_log_printf(MOSQ_LOG_INFO, "Pulse: Information model dumped to %s", filepath);
 	return 0;
 }

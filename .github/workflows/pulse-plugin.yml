@@ -267,6 +267,12 @@ jobs:
         with:
           name: mosquitto_pulse-windows-x64
           path: build/plugins/pulse/${{ env.BUILD_TYPE }}/mosquitto_pulse.dll
+
+  # ============================================
+  # Collect all artifacts
+  # ============================================
+  collect-artifacts:
+    needs: [linux-x64, linux-arm64, macos-arm, macos-intel, windows-x64]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
